@@ -272,7 +272,7 @@ const planTotalFat = computed(() =>
             (a, b) => (a.time ? 0 : 1) - (b.time ? 0 : 1)
           )"
           :class="[
-            'bg-[#f3f3f3] flex flex-col gap-2 rounded p-3 hover:translate-x-2 duration-300',
+            'bg-[#f3f3f3] flex flex-col gap-2 rounded p-3 outline outline-transparent hover:outline-[#d3d3d3] duration-300',
             !!m.time ? 'opacity-35' : '',
           ]"
         >
