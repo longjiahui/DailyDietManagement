@@ -7,4 +7,4 @@ pnpm dev
 
 ## screenshot
 
-![](https://raw.githubusercontent.com/longjiahui/DailyDietManagement/refs/heads/main/public/screenshot-1.png)
+![](https://github.com/longjiahui/DailyDietManagement/raw/refs/heads/main/public/screenshot-1.png)
