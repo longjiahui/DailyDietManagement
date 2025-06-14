@@ -6,6 +6,17 @@ export interface Food {
   fat: number;
   carbohydrate: number;
   per?: number; // default per100g
+  /**
+   * 总结关系公式：
+    1大卡 = 1千卡
+    1千卡 = 4.184千焦
+    1千焦 ≈ 0.239千卡
+    例如：
+
+    如果一个食物标注热量为500千卡，相当于500大卡或约2092千焦（500×4.184）
+    反之，1000千焦的热量约等于239千卡（或大卡）
+   */
+  calories: number; // 千卡
 }
 export interface FoodItem {
   id: string;
@@ -32,6 +43,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   PlusCircleOutlined,
+  SettingOutlined,
 } from "@ant-design/icons-vue";
 import Food from "./components/Food.vue";
 import { shortid } from "./util";
@@ -45,6 +57,24 @@ const meals = useLocalStorage<Meal[]>(
   computed(() => currentDate.value.format("YYYY-MM-DD") + "meals"),
   []
 );
+
+const modifyMaxValueModalVisible = ref(false);
+const modifyMaxValueModalData = ref({
+  carbohydrate: 0,
+  protein: 0,
+  fat: 0,
+  calories: 0,
+});
+watch(modifyMaxValueModalVisible, (val) => {
+  if (val) {
+    modifyMaxValueModalData.value = {
+      carbohydrate: maxNutritionStructure.value.carbohydrate,
+      protein: maxNutritionStructure.value.protein,
+      fat: maxNutritionStructure.value.fat,
+      calories: maxNutritionStructure.value.calories,
+    };
+  }
+});
 
 // createmealdialog
 const createMealModalVisible = ref(false);
@@ -74,7 +104,9 @@ watch(
     if (mealModalData.value.foods.length === 0) {
       mealModalData.value.foods.push({
         id: shortid(),
+        type: "predefined",
         food: {
+          calories: 0,
           carbohydrate: 0,
           fat: 0,
           protein: 0,
@@ -83,10 +115,18 @@ watch(
         },
       });
     }
-    if (mealModalData.value.foods[mealModalData.value.foods.length - 1].type) {
+    const last =
+      mealModalData.value.foods[mealModalData.value.foods.length - 1];
+    if (
+      last.amount ||
+      (last.type === "predefined" && last.foodId) ||
+      (last.type === "custom" && last.food?.name)
+    ) {
       mealModalData.value.foods.push({
         id: shortid(),
+        type: "predefined",
         food: {
+          calories: 0,
           carbohydrate: 0,
           fat: 0,
           protein: 0,
@@ -159,12 +199,24 @@ function totalFat(meal: Meal) {
     0
   );
 }
+function totalCalories(meal: Meal) {
+  const finalFoods = getFinalFoods(meal);
+  return finalFoods.reduce(
+    (t, f) => t + ((f?.calories || 0) * f.amount) / (f.per || 100),
+    0
+  );
+}
 
-const maxNutritionStructure = {
+const defaultMaxNutritionStructure = {
   carbohydrate: 183,
   protein: 116,
   fat: 49,
+  calories: 2248,
 };
+const maxNutritionStructure = useLocalStorage(
+  computed(() => `${currentDate.value.format("YYYY-MM-DD")}max`),
+  { ...defaultMaxNutritionStructure }
+);
 function getFinishedMeals() {
   return meals.value.filter((m) => !!m.time);
 }
@@ -177,6 +229,9 @@ const finishedTotalProtein = computed(() =>
 const finishedTotalFat = computed(() =>
   getFinishedMeals().reduce((t, m) => t + totalFat(m), 0)
 );
+const finishedTotalCalories = computed(() =>
+  getFinishedMeals().reduce((t, m) => t + totalCalories(m), 0)
+);
 const planTotalCarbohydrate = computed(() =>
   meals.value.reduce((t, m) => t + totalCarbohydrate(m), 0)
 );
@@ -186,6 +241,9 @@ const planTotalProtein = computed(() =>
 const planTotalFat = computed(() =>
   meals.value.reduce((t, m) => t + totalFat(m), 0)
 );
+const planTotalCalories = computed(() =>
+  meals.value.reduce((t, m) => t + totalCalories(m), 0)
+);
 </script>
 <template>
   <div class="size-full flex flex-col gap-10 p-4 max-w-[800px] mx-auto">
@@ -193,27 +251,40 @@ const planTotalFat = computed(() =>
       class="w-[200px] font-bold"
       v-model:value="currentDate"
     ></ADatePicker>
+    <div
+      @click="modifyMaxValueModalVisible = true"
+      class="cursor-pointer flex items-center gap-2"
+    >
+      <SettingOutlined />
+      <div class="text-sm">修改今日最大值</div>
+    </div>
     <div class="flex flex-col gap-4">
       <div class="flex flex-col gap-2">
         <div
           v-for="d in [
             {
-              name: 'Carbohydrate',
+              name: 'Carbohydrate' as const,
               finished: finishedTotalCarbohydrate,
               planed: planTotalCarbohydrate,
               total: maxNutritionStructure.carbohydrate,
             },
             {
-              name: 'Protein',
+              name: 'Protein' as const,
               finished: finishedTotalProtein,
               planed: planTotalProtein,
               total: maxNutritionStructure.protein,
             },
             {
-              name: 'Fat',
+              name: 'Fat' as const,
               finished: finishedTotalFat,
               planed: planTotalFat,
               total: maxNutritionStructure.fat,
+            },
+            {
+              name: 'Calories' as const,
+              finished: finishedTotalCalories,
+              planed: planTotalCalories,
+              total: maxNutritionStructure.calories,
             },
           ]"
           class="flex items-center gap-2 [&>div:first-child]:w-[100px]"
@@ -245,14 +316,31 @@ const planTotalFat = computed(() =>
               ></div>
             </ATooltip>
           </div>
-          <div class="w-[160px] text-sm font-semibold">
-            {{ d.finished }} /
-            <span class="text-gray-400 text-xs">
-              {{ d.total }}
-            </span>
-            <span class="ml-2 bg-gray-100 text-xs rounded px-2"
-              >- {{ d.total - d.finished }}</span
+          <div class="w-[240px] text-sm flex gap-2">
+            <span>{{ ((d.finished / d.total) * 100).toFixed(2) }}%</span>
+            <span
+              :class="[
+                ' font-semibold ',
+                Math.abs(d.total - d.finished) >
+                {
+                  Carbohydrate: 15,
+                  Protein: 10,
+                  Fat: 15,
+                  Calories: 100,
+                }[d.name]
+                  ? 'text-amber-500'
+                  : '',
+              ]"
             >
+              {{ d.finished.toFixed(2) }}
+            </span>
+            /
+            <span class="text-gray-400 text-xs">
+              {{ d.total.toFixed(2) }}
+            </span>
+            <span class="ml-2 bg-gray-100 text-xs rounded px-2">{{
+              (d.total - d.finished).toFixed(2)
+            }}</span>
           </div>
         </div>
       </div>
@@ -326,14 +414,25 @@ const planTotalFat = computed(() =>
           <div class="flex flex-col gap-2 text-sm">
             <div>
               Carbohydrate Total:
-              <span class="font-semibold">{{ totalCarbohydrate(m) }}</span>
+              <span class="font-semibold">{{
+                totalCarbohydrate(m).toFixed(2)
+              }}</span>
             </div>
             <div>
               Protein Total:
-              <span class="font-semibold">{{ totalProtein(m) }}</span>
+              <span class="font-semibold">{{
+                totalProtein(m).toFixed(2)
+              }}</span>
             </div>
             <div>
-              Fat Total: <span class="font-semibold">{{ totalFat(m) }}</span>
+              Fat Total:
+              <span class="font-semibold">{{ totalFat(m).toFixed(2) }}</span>
+            </div>
+            <div>
+              Calories Total:
+              <span class="font-semibold">{{
+                totalCalories(m).toFixed(2)
+              }}</span>
             </div>
           </div>
         </div>
@@ -349,10 +448,18 @@ const planTotalFat = computed(() =>
         <div class="font-semibold">Foods</div>
         <div class="flex flex-col gap-2">
           <div
-            v-for="d in mealModalData.foods"
+            v-for="(d, i) in mealModalData.foods"
             :key="d.id"
             class="flex flex-col gap-2 bg-[#efefef] p-2 rounded"
           >
+            <div
+              class="flex items-center justify-end gap-2"
+              v-if="(mealModalData.foods?.length || 0) - 1 !== i"
+            >
+              <APopconfirm @confirm="mealModalData.foods?.splice(i, 1)">
+                <DeleteOutlined />
+              </APopconfirm>
+            </div>
             <ASelect class="w-[120px]" v-model:value="d.type">
               <ASelectOption value="predefined">Predefined</ASelectOption>
               <ASelectOption value="custom">Custom</ASelectOption>
@@ -404,6 +511,54 @@ const planTotalFat = computed(() =>
             >
           </div>
           <ATimePicker v-model:value="mealModalData.time"></ATimePicker>
+        </div>
+      </div>
+    </AModal>
+    <AModal
+      @ok="
+        () => {
+          ;(['protein', 'carbohydrate', 'fat', 'calories'] as const satisfies (keyof typeof defaultMaxNutritionStructure)[]).forEach((k)=>{
+            modifyMaxValueModalData[k] = isNaN(
+                +modifyMaxValueModalData[k]
+              ) || +modifyMaxValueModalData[k] <= 0
+                ? defaultMaxNutritionStructure[k]
+                : +modifyMaxValueModalData[k];
+          })
+          maxNutritionStructure = modifyMaxValueModalData;
+          modifyMaxValueModalVisible = false;
+        }
+      "
+      v-model:open="modifyMaxValueModalVisible"
+      title="编辑最大值"
+    >
+      <div class="flex flex-col gap-4 [&>div>div:first-child]:w-[200px]">
+        <div class="flex items-center gap-2">
+          <div>Carbohydrate</div>
+          <AInput
+            v-model:value="modifyMaxValueModalData.carbohydrate"
+            type="number"
+          ></AInput>
+        </div>
+        <div class="flex items-center gap-2">
+          <div>Protein</div>
+          <AInput
+            v-model:value="modifyMaxValueModalData.protein"
+            type="number"
+          ></AInput>
+        </div>
+        <div class="flex items-center gap-2">
+          <div>Fat</div>
+          <AInput
+            v-model:value="modifyMaxValueModalData.fat"
+            type="number"
+          ></AInput>
+        </div>
+        <div class="flex items-center gap-2">
+          <div>Calories</div>
+          <AInput
+            v-model:value="modifyMaxValueModalData.calories"
+            type="number"
+          ></AInput>
         </div>
       </div>
     </AModal>
